@@ -33,11 +33,6 @@ class MultiModalModel:
         self.scraper = scraper
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        # DEBUG LOGS
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("🛠️ System Logs")
-        st.sidebar.text(f"Device: {self.device}")
-        
         # --- PATHS ---
         current_dir = os.path.dirname(os.path.abspath(__file__))
         self.t5_path = os.path.join(current_dir, "fashion_cleaner_model")
@@ -49,12 +44,12 @@ class MultiModalModel:
                 self.t5_tokenizer = T5Tokenizer.from_pretrained(self.t5_path)
                 self.t5_model = T5ForConditionalGeneration.from_pretrained(self.t5_path).to(self.device)
                 self.t5_model.eval()
-                st.sidebar.success("✅ T5 Text Model Loaded")
+                print("✅ T5 Text Model Loaded")
             except Exception as e:
-                st.sidebar.error(f"❌ T5 Error: {e}")
+                print(f"❌ T5 Error: {e}")
                 raise e
         else:
-            st.sidebar.error("❌ T5 Path Missing")
+            print("❌ T5 Path Missing")
             raise FileNotFoundError("T5 Model folder missing")
 
         # --- 2. LOAD VISION (BLIP) ---
@@ -64,15 +59,15 @@ class MultiModalModel:
         try:
             # BLIP Large for better color/texture accuracy
             model_id = "Salesforce/blip-image-captioning-large"
-            st.sidebar.info(f"⏳ Loading Vision Model ({model_id})...")
+            print(f"⏳ Loading Vision Model ({model_id})...")
             
             self.vision_processor = AutoProcessor.from_pretrained(model_id)
             self.vision_model = AutoModelForVision2Seq.from_pretrained(model_id).to(self.device)
             self.vision_model.eval()
             
-            st.sidebar.success("✅ BLIP Vision Model Loaded")
+            print("✅ BLIP Vision Model Loaded")
         except Exception as e:
-            st.sidebar.error(f"❌ Vision Failed: {e}")
+            print(f"❌ Vision Failed: {e}")
             self.vision_model = None
 
         # --- 3. LOAD DATA ---
@@ -83,9 +78,9 @@ class MultiModalModel:
             self.inventory_ids = keys
             self.inventory_texts = [data[k] for k in keys]
             self.inventory_embeddings = self._get_text_embeddings_batch(self.inventory_texts)
-            st.sidebar.info(f"📚 Index Size: {len(keys)}")
+            print(f"📚 Index Size: {len(keys)}")
         else:
-            st.sidebar.error("❌ Data Missing")
+            print("❌ Data Missing")
             self.inventory_ids = ["0"]
             self.inventory_texts = ["sample"]
             self.inventory_embeddings = torch.randn(1, 512).to(self.device)
@@ -120,8 +115,8 @@ class MultiModalModel:
         try:
             if image.mode != "RGB": image = image.convert("RGB")
             
-            # FIX: Added padding=True to fix tensor creation error
-            inputs = self.vision_processor(images=image, text="a photo of a", return_tensors="pt", padding=True).to(self.device)
+            # FIX: Wrapped text in list [] to solve "Unable to create tensor" error
+            inputs = self.vision_processor(images=image, text=["a photo of a"], return_tensors="pt", padding=True).to(self.device)
             
             with torch.no_grad():
                 generated_ids = self.vision_model.generate(**inputs, max_length=60)
@@ -131,7 +126,9 @@ class MultiModalModel:
                 caption = caption[12:].strip()
             return caption
         except Exception as e:
-            st.sidebar.error(f"Vision Error: {e}")
+            print(f"Vision Error: {e}")
+            import traceback
+            traceback.print_exc()
             return ""
 
     def _verify_seller_text(self, visual_caption, seller_text):
@@ -139,8 +136,6 @@ class MultiModalModel:
         Calculates confidence for each word in the seller's text based on the image.
         Returns: Filtered string containing only words we trust.
         """
-        st.sidebar.markdown("### 🕵️ Logic: Verifying Seller Description")
-        
         # 1. Parse Vision Truths
         vis_words = set(re.findall(r'\w+', visual_caption.lower()))
         vis_color = next((w for w in vis_words if w in self.colors), None)
@@ -152,41 +147,29 @@ class MultiModalModel:
         
         verified_words = []
         
-        st.sidebar.text(f"Vision Truth: Color='{vis_color}', Item='{vis_cat_raw}'")
-        
         for word in seller_words:
             if word in self.stopwords: 
                 continue # Skip fillers
                 
             confidence = 50 # Default (Neutral words like 'vintage', 'cute')
-            status = "⚪ Neutral (50%)"
             
             # CHECK COLOR CONFLICT
             if word in self.colors:
                 if vis_color and word != vis_color:
                     confidence = 0
-                    status = f"🔴 Conflict (0%) - Vision saw {vis_color}"
                 elif vis_color and word == vis_color:
                     confidence = 100
-                    status = "🟢 Verified (100%)"
             
             # CHECK CATEGORY CONFLICT
             elif word in self.category_map:
                 mapped_cat = self.category_map[word]
                 if vis_cat and mapped_cat != vis_cat:
                     confidence = 0
-                    status = f"🔴 Conflict (0%) - Vision saw {vis_cat_raw}"
                 elif vis_cat and mapped_cat == vis_cat:
                     confidence = 100
-                    status = "🟢 Verified (100%)"
             
-            # Display Decision in Sidebar
             if confidence > 0:
                 verified_words.append(word)
-                if confidence != 50 or word in self.colors or word in self.category_map:
-                    st.sidebar.text(f"'{word}': {status}")
-            else:
-                st.sidebar.text(f"'{word}': {status} -> REMOVED")
 
         return " ".join(verified_words)
 
@@ -203,29 +186,23 @@ class MultiModalModel:
         """
         Create 2D t-SNE visualization of the embedding space.
         """
-        st.sidebar.markdown("### 📊 Viz Debugger")
-        
         if not SKLEARN_AVAILABLE:
-            st.sidebar.error("❌ 'scikit-learn' missing. Run `pip install scikit-learn`")
             return None
             
         try:
             # 1. Check Data Size
             total_items = len(self.inventory_embeddings)
-            st.sidebar.text(f"Viz Inventory Size: {total_items}")
             
             if total_items < 3:
-                st.sidebar.warning(f"⚠️ Not enough items ({total_items}). Need > 3 for t-SNE.")
                 return None
 
-            # 2. Convert Query Embedding to Numpy (FIXED: Use tolist() to avoid Numpy error)
+            # 2. Convert Query Embedding to Numpy
             query_emb_np = np.array(query_emb.cpu().detach().tolist()) 
             
             # 3. Sample Inventory Embeddings
             num_samples = min(200, total_items)
             indices = np.random.choice(total_items, num_samples, replace=False)
             
-            # FIX: Convert indices to list BEFORE indexing tensor to fix Windows dtype error
             indices_list = indices.tolist()
             sample_embeddings_tensor = self.inventory_embeddings[indices_list]
             sample_embeddings = np.array(sample_embeddings_tensor.cpu().detach().tolist())
@@ -244,7 +221,6 @@ class MultiModalModel:
             sizes = [15] + [5] * num_samples 
             
             # 5. Run t-SNE
-            st.sidebar.text("Running t-SNE...")
             perp = min(30, len(all_embeddings) - 1)
             if perp < 1: perp = 1
             
@@ -266,33 +242,31 @@ class MultiModalModel:
             return fig
             
         except Exception as e:
-            st.sidebar.error(f"Viz Error: {e}")
+            print(f"Viz Error: {e}")
             import traceback
-            st.sidebar.text(traceback.format_exc())
+            print(traceback.format_exc())
             return None
 
     def predict(self, image: Optional[Image.Image], text: str) -> Dict:
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("**🚀 Processing**")
-        
-        # 1. VISION
+        # --- 1. VISION (The Source of Truth) ---
         visual_caption = ""
         if image:
             visual_caption = self._generate_vision_caption(image)
-            st.sidebar.info(f"👁️ Vision Model Output: **`{visual_caption}`**")
+            # DEBUG: Print what the vision model actually sees
+            print(f"👀 DEBUG - BLIP Saw: '{visual_caption}'") 
         
-        # 2. LOGIC-BASED FUSION
+        # --- 2. LOGIC-BASED FUSION ---
         text = text.strip() if text else ""
         if image:
             filtered_seller_text = self._verify_seller_text(visual_caption, text)
-            combined_input = f"{visual_caption} {filtered_seller_text}"
+            # PROMPT ENGINEERING: Add a prefix to guide T5
+            combined_input = f"refine description: {visual_caption} {filtered_seller_text}"
         else:
-            combined_input = text if text else "clothing item"
+            combined_input = f"refine description: {text}" if text else "clothing item"
             
-        st.sidebar.markdown(f"**📥 Input sent to T5:**")
-        st.sidebar.code(combined_input)
+        print(f"⌨️ DEBUG - T5 Input: '{combined_input}'")
 
-        # 3. T5 CLEANING
+        # --- 3. T5 CLEANING ---
         inputs = self.t5_tokenizer(combined_input, return_tensors="pt", max_length=128, truncation=True).to(self.device)
         with torch.no_grad():
             outputs = self.t5_model.generate(
@@ -302,31 +276,27 @@ class MultiModalModel:
                 output_scores=True
             )
             
-        clean_desc = self.t5_tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
-        clean_desc = self._clean_repetition(clean_desc)
+        raw_clean_desc = self.t5_tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
+        raw_clean_desc = self._clean_repetition(raw_clean_desc)
         
-        st.sidebar.success(f"**✨ Final Output:** `{clean_desc}`")
+        print(f"🤖 DEBUG - T5 Output: '{raw_clean_desc}'")
 
-        # 4. LIVE SEARCH & VISUALIZATION
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("**🔍 Live Search**")
-        
+        # --- 4. HALLUCINATION CHECK (The Fix) ---
+        # If T5 output is wild, fallback to the Visual Caption
+        clean_desc = self._sanity_check(visual_caption, raw_clean_desc)
+
+        # --- 5. LIVE SEARCH & VISUALIZATION ---
         similar_items = []
         
         # A. Live Poshmark Search
         if self.scraper:
-            st.sidebar.info(f"Searching Poshmark for: `{clean_desc}`")
             try:
+                # Search using the verified description
                 live_results = self.scraper.search_poshmark(clean_desc, top_k=5)
                 if live_results:
-                    st.sidebar.success(f"Found {len(live_results)} items on Poshmark!")
                     similar_items = live_results 
-                else:
-                    st.sidebar.warning("No Poshmark results found. Using backup inventory.")
             except Exception as e:
-                st.sidebar.error(f"Scraping Error: {e}")
-        else:
-            st.sidebar.warning("Scraper not initialized.")
+                print(f"Scraping Error: {e}")
 
         # B. Embedding Calculation
         query_emb = self._get_text_embeddings_batch([clean_desc])
@@ -334,7 +304,7 @@ class MultiModalModel:
         # C. Visualization
         embeddings_vis = self._create_embedding_visualization(query_emb)
 
-        # D. Fallback Search
+        # D. Fallback Search (Local Inventory)
         if not similar_items:
             scores = torch.mm(query_emb, self.inventory_embeddings.T).squeeze(0)
             top_k = 5
@@ -352,7 +322,8 @@ class MultiModalModel:
                     "listing_url": "#"
                 })
 
-        # 5. ATTRIBUTES
+        # --- 6. ATTRIBUTES ---
+        # Calculate Base Confidence
         try:
             if outputs.scores:
                 scores = torch.stack(outputs.scores, dim=1)
@@ -370,11 +341,52 @@ class MultiModalModel:
 
         return {
             "visual_caption": visual_caption,
-            "clean_description": clean_desc,
+            "clean_description": clean_desc, # This is now the safe version
             "attributes": attributes,
             "similar_items": similar_items,
             "embeddings_vis": embeddings_vis
         }
+
+    def _sanity_check(self, visual_truth, t5_output):
+        """
+        Prevents T5 from hallucinating features not seen by the Vision model.
+        """
+        if not visual_truth: return t5_output
+        
+        # 1. Critical Gender Check
+        # If Vision saw a "man" but T5 wrote "woman", T5 is biased. Revert.
+        vision_lower = visual_truth.lower()
+        t5_lower = t5_output.lower()
+        
+        male_terms = {'man', 'men', 'mens', 'male', 'boy', 'guy'}
+        female_terms = {'woman', 'women', 'womens', 'female', 'girl', 'lady', 'dress', 'gown'}
+        
+        vis_has_male = any(w in vision_lower.split() for w in male_terms)
+        t5_has_female = any(w in t5_lower.split() for w in female_terms)
+        
+        if vis_has_male and t5_has_female:
+            print("⚠️ ALERT: Gender Hallucination Detected. Reverting to Vision caption.")
+            return visual_truth
+            
+        # 2. Critical Overlap Check
+        # If T5 output has almost no words in common with Vision, it's hallucinating.
+        vis_words = set(re.findall(r'\w+', vision_lower))
+        t5_words = set(re.findall(r'\w+', t5_lower))
+        
+        # Remove stopwords for comparison
+        vis_clean = vis_words - self.stopwords
+        t5_clean = t5_words - self.stopwords
+        
+        if not t5_clean: return t5_output
+        
+        overlap = len(vis_clean.intersection(t5_clean))
+        
+        # If fewer than 1 meaningful word matches (e.g. T5 says "lattice" and Vision says "grey t-shirt")
+        if overlap < 1:
+            print("⚠️ ALERT: Content Hallucination Detected. Reverting to Vision caption.")
+            return visual_truth
+            
+        return t5_output
 
     def predict_validation_mode(self) -> Dict:
         idx = random.randint(0, len(self.inventory_texts)-1)

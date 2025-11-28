@@ -1,6 +1,6 @@
 """
 Multi-Modal Attribute Extraction & Retrieval for Secondhand E-Commerce
-Streamlit Application - Final Version
+Streamlit Application - Final Version with Enhanced Analytics
 """
 
 import streamlit as st
@@ -11,6 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 import sys
+import re
 
 # Add utils to path
 sys.path.append(str(Path(__file__).parent))
@@ -66,13 +67,13 @@ if 'uploaded_image' not in st.session_state:
 if 'original_text' not in st.session_state:
     st.session_state.original_text = ""
 if 'input_method' not in st.session_state:
-    st.session_state.input_method = "upload"  # "upload" or "poshmark"
+    st.session_state.input_method = "upload"
 if 'scraped_data' not in st.session_state:
     st.session_state.scraped_data = None
 if 'scraped_images' not in st.session_state:
-    st.session_state.scraped_images = []  # Store all downloaded images
+    st.session_state.scraped_images = []
 if 'selected_image_idx' not in st.session_state:
-    st.session_state.selected_image_idx = 0  # Index of selected image for processing
+    st.session_state.selected_image_idx = 0
 
 # Initialize scraper first (needed for model)
 @st.cache_resource
@@ -96,17 +97,6 @@ def load_catalog_data():
 model = load_model()
 catalog_df = load_catalog_data()
 
-# ==========================================
-# SIDEBAR - Metrics Dashboard
-# ==========================================
-st.sidebar.title("📊 Model Metrics Dashboard")
-
-st.sidebar.markdown("### Overall Model Performance")
-st.sidebar.metric("F1-Score (Macro)", "0.87", delta="+0.02")
-st.sidebar.metric("BLEU Score", "0.73", delta="+0.01")
-st.sidebar.metric("mAP @ k=5", "0.82", delta="+0.03")
-
-st.sidebar.markdown("---")
 
 # Validation Mode Toggle
 validation_mode = st.sidebar.checkbox(
@@ -160,11 +150,8 @@ if st.session_state.input_method == "upload":
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
             st.session_state.uploaded_image = image
-            
-            # Display uploaded image with fixed width
             st.image(image, caption="Uploaded Image", width=400)
         elif validation_mode:
-            # In validation mode, use sample images from dataset
             st.info("💡 Validation Mode: Using sample image from Fashion-IQ dataset")
 
     with col2:
@@ -183,7 +170,7 @@ if st.session_state.input_method == "upload":
     col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
     with col_btn2:
         process_button_upload = st.button("🚀 Process Listing", type="primary", use_container_width=True, key="process_upload")
-    uploaded_file_check = uploaded_file  # Store for later check
+    uploaded_file_check = uploaded_file
 
 else:
     # Initialize for Poshmark method
@@ -264,8 +251,6 @@ else:
                                 # Display selected image
                                 selected_image = st.session_state.scraped_images[selected_idx]
                                 st.image(selected_image, caption=f"Selected Image {selected_idx+1} of {num_images}", width=300)
-                                
-                                # Store selected image for processing
                                 st.session_state.uploaded_image = selected_image
                                 
                                 # Show gallery of all images in columns
@@ -319,8 +304,7 @@ else:
                 # Display scraped images if available
                 if st.session_state.scraped_images:
                     num_images = len(st.session_state.scraped_images)
-                    
-                    # Image selector for previously scraped data
+                    # Image selector
                     if num_images > 1:
                         selected_idx = st.selectbox(
                             "Select image to use for processing:",
@@ -333,13 +317,11 @@ else:
                     else:
                         selected_idx = 0
                     
-                    # Display selected image
                     if selected_idx < len(st.session_state.scraped_images):
                         selected_image = st.session_state.scraped_images[selected_idx]
                         st.image(selected_image, caption=f"Image {selected_idx+1} of {num_images}", width=300)
                         st.session_state.uploaded_image = selected_image
                     
-                    # Show thumbnail gallery
                     if num_images > 1:
                         st.markdown("**All Images:**")
                         gallery_cols = st.columns(min(5, num_images))
@@ -358,7 +340,6 @@ else:
                     height=150,
                     key="scraped_description_edit"
                 )
-                # Update session state with any edits
                 st.session_state.original_text = edited_description
             
             col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
@@ -392,14 +373,13 @@ try:
 except NameError:
     uploaded_file_check = None
 
-# Combine all process button states
+# Combine process button states
 process_button = (
     (st.session_state.input_method == "upload" and process_button_upload) or
     (st.session_state.input_method == "poshmark" and process_button_scraped) or
     (st.session_state.input_method == "poshmark" and process_button_scraped_saved)
 )
 
-# Check if we have valid input for processing
 has_valid_input = (
     (st.session_state.input_method == "upload" and (uploaded_file_check is not None or validation_mode)) or
     (st.session_state.input_method == "poshmark" and st.session_state.scraped_data and st.session_state.scraped_data.get('success')) or
@@ -408,14 +388,11 @@ has_valid_input = (
 
 if process_button and has_valid_input:
     with st.spinner("🤖 Processing listing... Generating embeddings and extracting attributes..."):
-        # Simulate processing time
         import time
         time.sleep(1)
         
-        # Get text description from session state
         text_description = st.session_state.original_text or ""
         
-        # Process with model
         if st.session_state.uploaded_image or validation_mode:
             if validation_mode:
                 results = model.predict_validation_mode()
@@ -485,13 +462,10 @@ if st.session_state.processed and 'results' in st.session_state:
         },
     ])
     
-    # Display table with confidence badges
     for idx, row in attributes_df.iterrows():
         col1, col2, col3 = st.columns([2, 3, 2])
-        
         with col1:
             st.markdown(f"**{row['Attribute']}**")
-        
         with col2:
             confidence = row['Confidence']
             if confidence >= 80:
@@ -511,10 +485,8 @@ if st.session_state.processed and 'results' in st.session_state:
                 st.markdown(f"{checkmark} **Predicted:** {row['Predicted Value']} ({confidence}%) | **Actual:** {ground_truth}")
             else:
                 st.markdown(f"{badge_color} **{row['Predicted Value']}** ({confidence}%)")
-        
         with col3:
             st.markdown(f'<span class="{css_class}">{confidence}%</span>', unsafe_allow_html=True)
-        
         st.markdown("---")
     
     # ==========================================
@@ -525,7 +497,6 @@ if st.session_state.processed and 'results' in st.session_state:
     
     # Ranked Results Grid
     st.markdown("### 🎯 Top-5 Similar Items Found on Poshmark")
-    st.info("💡 Results are based on searching Poshmark using the generated clean description.")
     
     similar_items = results["similar_items"]
     
@@ -582,21 +553,97 @@ if st.session_state.processed and 'results' in st.session_state:
                 "Brand": item.get("brand", "N/A"),
                 "Price": item.get("price", "N/A"),
                 "Size": item.get("size", "N/A"),
-                "Description": item.get("description", "N/A")[:80] + ("..." if len(item.get("description", "")) > 80 else ""),
-                "Listing URL": item.get("listing_url", "N/A")[:40] + ("..." if item.get("listing_url") and len(item.get("listing_url", "")) > 40 else "")
+                "Listing URL": item.get("listing_url", "N/A")[:40] + "..."
             }
             for i, item in enumerate(similar_items[:5])
         ])
         st.dataframe(similarity_df, use_container_width=True, hide_index=True)
 
-    # Embedding Visualization (Moved to Bottom)
+    # ==========================================
+    # OUTPUT MODULE C: Analytics & Insights
+    # ==========================================
     st.markdown("---")
-    with st.expander("📊 View Embedding Space Visualization (t-SNE)"):
-        # Check if the key exists AND if the value is not None
+    st.markdown("## 📈 Output Module C: Analytics & Insights")
+    
+    tab1, tab2, tab3 = st.tabs(["🧠 Model Confidence", "💰 Price Analysis", "🗺️ Embedding Space"])
+    
+    # TAB 1: Confidence Radar
+    with tab1:
+        st.markdown("##### Visualizing model certainty across attributes")
+        try:
+            attr_keys = list(results['attributes'].keys())
+            attr_vals = [results['attributes'][k]['confidence'] for k in attr_keys]
+            # Close the loop
+            attr_keys += [attr_keys[0]]
+            attr_vals += [attr_vals[0]]
+            
+            fig = go.Figure(data=go.Scatterpolar(
+                r=attr_vals,
+                theta=[k.title() for k in attr_keys],
+                fill='toself',
+                name='Confidence',
+                line_color='#1f77b4'
+            ))
+            fig.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                showlegend=False,
+                height=400
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Could not generate radar chart: {e}")
+
+    # TAB 2: Price Analysis (IMPROVED with Box Plot)
+    with tab2:
+        st.markdown("##### Price distribution of similar items found on Poshmark")
+        price_data = []
+        for item in similar_items:
+            try:
+                p_str = str(item.get('price', ''))
+                # Extract number from string like "$25"
+                p_val = float(re.sub(r'[^\d.]', '', p_str))
+                price_data.append({
+                    "Price": p_val,
+                    "Title": item.get('title', 'Item'),
+                    "Brand": item.get('brand', 'N/A')
+                })
+            except:
+                continue
+        
+        if price_data:
+            df_prices = pd.DataFrame(price_data)
+            col_metrics1, col_metrics2 = st.columns(2)
+            avg_price = df_prices["Price"].mean()
+            min_price = df_prices["Price"].min()
+            max_price = df_prices["Price"].max()
+            
+            with col_metrics1:
+                st.metric("Average Market Price", f"${avg_price:.2f}")
+            with col_metrics2:
+                st.metric("Price Range", f"${min_price:.0f} - ${max_price:.0f}")
+                
+            # Visualization: Box Plot with Points (Jitter)
+            fig_price = px.box(
+                df_prices,
+                x="Price",  # Horizontal for better readability of price range
+                points="all", # Show individual points
+                hover_data=["Title", "Brand"],
+                title="Market Price Distribution",
+                labels={"Price": "Price ($)"},
+                color_discrete_sequence=['#2ca02c']
+            )
+            fig_price.add_vline(x=avg_price, line_dash="dash", line_color="red", annotation_text="Avg")
+            st.plotly_chart(fig_price, use_container_width=True)
+        else:
+            st.info("Not enough price data collected from search results.")
+
+    # TAB 3: Embedding Visualization (t-SNE)
+    with tab3:
+        st.markdown("##### 2D Projection of Semantic Similarity")
         if results.get('embeddings_vis') is not None:
             st.plotly_chart(results['embeddings_vis'], use_container_width=True)
         else:
-            st.info("ℹ️ Visualization not available. (Ensure 'scikit-learn' is installed and you have >3 items in inventory).")
+            st.info("ℹ️ Visualization not available. (Ensure 'scikit-learn' is installed and you have enough inventory data).")
 
 elif process_button:
     if st.session_state.input_method == "upload":
