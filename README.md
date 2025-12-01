@@ -106,17 +106,32 @@ Two input methods available:
 
 ### File Structure
 
-```
+### File Structure
+
+```text
 .
-├── app.py                 # Main Streamlit application
-├── model_inference.py     # Model wrapper and inference logic
-├── data_utils.py          # Catalog loading and data utilities
-├── poshmark_scraper.py    # Poshmark listing scraper with security
-├── requirements.txt       # Python dependencies
-├── README.md             # This file
-├── run.sh                # Quick start script
-└── assets/               # Asset directory (images, etc.)
-    └── images/           # Catalog item images (optional)
+├── .streamlit/
+│   └── config.toml          # Streamlit configuration
+├── assets/
+│   └── images/              # Asset directory for images
+├── models/                  # Local model artifacts and configurations
+│   ├── fashion_cleaner_model/
+│   └── final_vision_model/
+├── scrapers/                # Poshmark scraping scripts
+│   ├── poshmark_scraper.py
+│   └── poshmark_scraper_selenium.py
+├── src/                     # Core application logic and utilities
+│   ├── cleaned_captions.json
+│   ├── data_utils.py        # Catalog loading and data utilities
+│   └── model_inference.py   # Model wrapper and inference logic
+├── venv/                    # Virtual environment
+├── .gitattributes
+├── .gitignore
+├── app.py                   # Main Streamlit application entry point
+├── config.json              # General configuration
+├── README.md                # Project documentation
+├── requirements.txt         # Python dependencies
+└── run.sh                   # Quick start script
 ```
 
 ### Key Components
