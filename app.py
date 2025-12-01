@@ -11,14 +11,20 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 import sys
+import os
 import re
 
-# Add utils to path
-sys.path.append(str(Path(__file__).parent))
+# --- 1. PATH CONFIGURATION (CRITICAL FOR NEW STRUCTURE) ---
+# Add 'src' and 'scrapers' to Python's search path so we can import from them
+current_dir = Path(__file__).parent
+sys.path.append(str(current_dir / "src"))
+sys.path.append(str(current_dir / "scrapers"))
 
-from model_inference import MultiModalModel
-from data_utils import load_catalog, get_sample_noisy_description
-from poshmark_scraper import PoshmarkScraper
+# --- 2. UPDATED IMPORTS ---
+# Now importing from the new folder locations
+from src.model_inference import MultiModalModel
+from src.data_utils import load_catalog, get_sample_noisy_description
+from scrapers.poshmark_scraper import PoshmarkScraper
 
 # Page configuration
 st.set_page_config(
@@ -74,6 +80,42 @@ if 'scraped_images' not in st.session_state:
     st.session_state.scraped_images = []
 if 'selected_image_idx' not in st.session_state:
     st.session_state.selected_image_idx = 0
+
+# --- NEW HELPER FUNCTION: OPTIMIZED QUERY GENERATION ---
+def generate_optimized_query(attributes, clean_description):
+    """
+    Constructs a search query based on high-confidence attributes 
+    and key terms from the clean description.
+    """
+    query_parts = []
+    
+    # 1. Brand (Highest Priority)
+    brand = attributes.get("brand", {}).get("value")
+    # specific logic: only add if it's not "Unknown" or None
+    if brand and brand.lower() not in ["unknown", "none", "n/a", "generic"]:
+        query_parts.append(brand)
+        
+    # 2. Color
+    color = attributes.get("color", {}).get("value")
+    if color and color.lower() not in ["unknown", "multicolor"]:
+        query_parts.append(color)
+        
+    # 3. Category/Item Name
+    category = attributes.get("category", {}).get("value")
+    if category:
+        query_parts.append(category)
+        
+    # 4. Style (Optional - can refine search but sometimes narrows too much)
+    style = attributes.get("style", {}).get("value")
+    if style and style.lower() not in ["casual", "unknown"]:
+        query_parts.append(style)
+
+    # Fallback: If attributes failed, use the generated clean description
+    # Truncate to first 5 words to avoid Poshmark search confusion
+    if len(query_parts) < 2 and clean_description:
+        return " ".join(clean_description.split()[:5])
+        
+    return " ".join(query_parts)
 
 # Initialize scraper first (needed for model)
 @st.cache_resource
@@ -387,12 +429,13 @@ has_valid_input = (
 )
 
 if process_button and has_valid_input:
-    with st.spinner("🤖 Processing listing... Generating embeddings and extracting attributes..."):
+    with st.spinner("🤖 Processing listing... Generating embeddings, extracting attributes, and searching Poshmark..."):
         import time
-        time.sleep(1)
+        # time.sleep(1) # Removed sleep for faster performance
         
         text_description = st.session_state.original_text or ""
         
+        # 1. Run the AI Model first to get the "Clean" data
         if st.session_state.uploaded_image or validation_mode:
             if validation_mode:
                 results = model.predict_validation_mode()
@@ -402,6 +445,34 @@ if process_button and has_valid_input:
                     text=text_description if text_description else ""
                 )
             
+            # --- UPDATED LOGIC: Search based on Cleaned Text ---
+            
+            # 2. Generate an optimized query from the AI results
+            search_query = generate_optimized_query(
+                results["attributes"], 
+                results["clean_description"]
+            )
+            
+            # Feedback to user
+            st.toast(f"Searching Poshmark for: '{search_query}'")
+            print(f"DEBUG: Optimized Search Query: {search_query}")
+
+            # 3. Execute Search using the existing scraper instance
+            try:
+                # Add "women" or "men" if your model extracts gender, otherwise Poshmark defaults
+                # strict=False allows fuzzy matching
+                new_search_results = scraper.search_poshmark(search_query, top_k=5)
+                
+                # Update the results object with the live scraper data if we found results
+                if new_search_results:
+                    results["similar_items"] = new_search_results
+                
+            except Exception as e:
+                print(f"Search Error: {e}")
+                # Fallback is to keep existing results or empty list
+
+            # --- END UPDATED LOGIC ---
+
             st.session_state.processed = True
             st.session_state.results = results
             st.rerun()
@@ -509,10 +580,12 @@ if st.session_state.processed and 'results' in st.session_state:
                 display_image = None
                 if item.get("image_url"):
                     try:
+                        # Attempt to download image directly since we are live searching
                         display_image = scraper.download_image(item["image_url"])
                     except Exception as e:
                         st.caption(f"Could not load image: {str(e)[:50]}")
                 
+                # Fallback for internal dataset images if not a live search
                 if not display_image and item.get("image_path"):
                     try:
                         display_image = Image.open(item["image_path"])
