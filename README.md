@@ -102,19 +102,6 @@ Two input methods available:
   - Retrieved items with similarity scores
   - Cosine similarity displayed for each result
 
-### 4. Evaluation & Metrics Dashboard
-
-- **Sidebar Metrics**:
-  - F1-Score (Macro): 0.87
-  - BLEU Score: 0.73
-  - mAP @ k=5: 0.82
-
-- **Validation Mode**:
-  - Enable to compare predictions against ground truth labels
-  - Green checkmarks (✅) for correct predictions
-  - Red X's (❌) for incorrect predictions
-  - Uses Fashion-IQ style ground truth data
-
 ## 🏗️ Architecture
 
 ### File Structure
@@ -157,34 +144,14 @@ Two input methods available:
    - Validation mode
    - Poshmark link integration
 
-## 🔧 Customization
+## 🔧 Models
 
-### Using Real Models
+1. **Text-to-text**
+	- Look at the fashion_cleaner_model for the training data and weights 
 
-The current implementation uses mock data for demonstration. To integrate real models:
+2. **Vision-encoder**
+	- Look at the final_image_processor, final_vision_model and final_tokenizer for model weights and python file. 
 
-1. **Update `model_inference.py`**:
-   - Load actual PyTorch models in `__init__`
-   - Replace mock embedding extraction with real model inference
-   - Update attribute classification with trained classifier
-
-2. **Update `data_utils.py`**:
-   - Load real catalog data from database/API
-   - Use pre-computed embeddings from actual model
-
-### Adding Your Own Catalog Images
-
-1. Place images in `assets/images/` directory
-2. Name images as `item_XXX.jpg` (matching item_id in catalog)
-3. Update catalog DataFrame to reference actual image paths
-
-### Metrics Configuration
-
-Edit the sidebar metrics in `app.py` to reflect your actual model performance:
-
-```python
-st.sidebar.metric("F1-Score (Macro)", "0.87", delta="+0.02")
-```
 
 ## 📊 User Flow
 
@@ -202,22 +169,6 @@ st.sidebar.metric("F1-Score (Macro)", "0.87", delta="+0.02")
 4. **Review**: Review scraped data (title, size, description, images)
 5. **Process**: Click "🚀 Process Scraped Listing" → Loading spinner appears
 6. **Output**: Same as Upload Method (attributes + similar items)
-
-## 🧪 Validation Mode
-
-Enable Validation Mode from the sidebar to:
-
-- Compare predictions against ground truth labels
-- See visual indicators (✅/❌) for correct/incorrect predictions
-- Evaluate model performance on Fashion-IQ style dataset
-
-## 🔮 Future Scope (Post-Grading)
-
-- User feedback loop (correct predictions to retrain model)
-- Multi-image support (Front/Back views)
-- Integration with live eBay/Depop API
-- Real-time model inference with GPU acceleration
-- FAISS index for fast similarity search at scale
 
 ## 📝 Technical Stack
 
@@ -239,5 +190,4 @@ This project is created for educational purposes (AI/ML Course).
 
 ---
 
-**Note**: This is an MVP version (0.1) designed for course evaluation. For production use, integrate actual trained models and implement proper error handling, logging, and scalability features.
 
