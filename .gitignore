@@ -2,3 +2,5 @@ venv/
 *.safetensors
 
 *.safetensors
+
+__pycache__/

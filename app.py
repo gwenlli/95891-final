@@ -11,14 +11,20 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 import sys
+import os
 import re
 
-# Add utils to path
-sys.path.append(str(Path(__file__).parent))
+# --- 1. PATH CONFIGURATION (CRITICAL FOR NEW STRUCTURE) ---
+# Add 'src' and 'scrapers' to Python's search path so we can import from them
+current_dir = Path(__file__).parent
+sys.path.append(str(current_dir / "src"))
+sys.path.append(str(current_dir / "scrapers"))
 
-from model_inference import MultiModalModel
-from data_utils import load_catalog, get_sample_noisy_description
-from poshmark_scraper import PoshmarkScraper
+# --- 2. UPDATED IMPORTS ---
+# Now importing from the new folder locations
+from src.model_inference import MultiModalModel
+from src.data_utils import load_catalog, get_sample_noisy_description
+from scrapers.poshmark_scraper import PoshmarkScraper
 
 # Page configuration
 st.set_page_config(

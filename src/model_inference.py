@@ -33,10 +33,19 @@ class MultiModalModel:
         self.scraper = scraper
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        # --- PATHS ---
+        # --- PATHS (UPDATED FOR FOLDER STRUCTURE) ---
+        # 1. Get the directory where THIS script lives (.../src)
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.t5_path = os.path.join(current_dir, "fashion_cleaner_model")
-        self.data_path = os.path.join(current_dir, "cleaned_captions.json")
+        
+        # 2. Go up one level to the Project Root (.../95891-Final-Proj)
+        project_root = os.path.dirname(current_dir)
+        
+        # 3. Define path to the models folder
+        self.t5_path = os.path.join(project_root, "models", "fashion_cleaner_model")
+        
+        # 4. Define path to data (Assumes file is at Project Root)
+        # Note: If you moved this file to 'data_analysis', change "project_root" to os.path.join(project_root, "data_analysis")
+        self.data_path = os.path.join(project_root, "cleaned_captions.json")
         
         # --- 1. LOAD T5 (Text Refiner) ---
         if os.path.exists(self.t5_path):
@@ -49,7 +58,7 @@ class MultiModalModel:
                 print(f"❌ T5 Error: {e}")
                 raise e
         else:
-            print("❌ T5 Path Missing")
+            print(f"❌ T5 Path Missing: {self.t5_path}")
             raise FileNotFoundError("T5 Model folder missing")
 
         # --- 2. LOAD VISION (BLIP) ---
@@ -80,7 +89,7 @@ class MultiModalModel:
             self.inventory_embeddings = self._get_text_embeddings_batch(self.inventory_texts)
             print(f"📚 Index Size: {len(keys)}")
         else:
-            print("❌ Data Missing")
+            print(f"❌ Data Missing at: {self.data_path}")
             self.inventory_ids = ["0"]
             self.inventory_texts = ["sample"]
             self.inventory_embeddings = torch.randn(1, 512).to(self.device)
